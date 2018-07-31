@@ -3,59 +3,11 @@ require('dotenv').config()
 const poloniex = require('../lib/poloniex');
 const db = require('../db');
 const ExchangeRate = require('../db/models/ExchangeRate');
-const socket = require('./socket');
+const socket = require('./socket');     // subscribe api2.poloniex.com
 const { parseJSON, polyfill } = require('../lib/common');
 
 db.connect();
-socket.connect();
-
-const messageHandler = {
-    1002: async (data) => {
-        // console.log('rcv ticker!');
-        // console.log("data]",data);
-
-        if (!data) 
-            return;
-
-        const converted = poloniex.convertToTickerObject(data);
-
-        // console.log("-----------\nconverted]",converted);
-
-        // const { name, ...rest } = data;
-        const { name } = converted;
-        const rest = polyfill.objectWithoutProperties(converted, 'name');
-
-        // console.log("polyfill]",name, rest);
-        try {
-            const updated = await ExchangeRate.updateTicker(name, rest);
-            console.log(updated);
-        } catch(e) {
-            console.error(e);
-        }
-        
-    }
-}
-
-socket.handlMessage = (message) => {
-    // console.log(message);
-    const parsed = parseJSON(message);
-    if (!parsed) {
-        return null;
-    }
-    // console.log(parsed);
-    const [type, meta, data ] = parsed; /** assignment !!! */
-
-    if ( messageHandler[type] ) {
-        // console.log("messageHandler]", parsed);
-        messageHandler[type](data);
-    }
-};
-
-// poloniex.getTickers().then(
-//     data => {
-//         // console.log(data);
-//     }
-// );
+socket.connect();    // subscribe api2.poloniex.com
 
 async function registerInitialExchangeRate() 
 {
@@ -77,7 +29,7 @@ async function registerInitialExchangeRate()
         }
     );
     
-    console.log(promises.length);
+    console.log('promises len:',promises.length);
 
     try {
         await Promise.all(promises);
@@ -94,6 +46,79 @@ async function registerInitialExchangeRate()
     console.log('registerInitialExchangeRate succeed!');
 }
 
+async function refreshEntireRate() {
+    const tickers = await poloniex.getTickers();
+    const keys = Object.keys(tickers);
 
-registerInitialExchangeRate();
+    // console.log('keys:',keys);
+    const promises = keys.map(
+        key => {
+            return ExchangeRate.updateTicker(key, tickers[key]);
+        }
+    );
+    try {
+        await Promise.all(promises);
+    } catch (e) {
+        Cosole.error('Oops, failed to update entire rate!');
+        return;
+    }
+    console.log('Refreshed entire rate.');
+}
+
+const messageHandler = {
+    1002: async (data) => {
+        // console.log('rcv ticker!');
+        // console.log("data]",data);
+
+        if (!data) 
+            return;
+
+        const converted = poloniex.convertToTickerObject(data);
+
+        // console.log("-----------\nconverted]",converted);
+
+        // const { name, ...rest } = data;
+        const { name } = converted;
+        const rest = polyfill.objectWithoutProperties(converted, 'name');
+
+        // console.log("polyfill]",name, rest);
+        try {
+            const updated = await ExchangeRate.updateTicker(name, rest);
+            // console.log(updated);
+            // console.log('[Update]', name, new Date() );
+        } catch(e) {
+            console.error(e);
+        }
+        
+    }
+}
+
+// set handleMessage()
+socket.handleMessage = (message) => {
+    // console.log(message);
+    const parsed = parseJSON(message);
+    if (!parsed) {
+        return null;
+    }
+    // console.log(parsed);
+    const [type, meta, data ] = parsed; /** assignment !!! */
+
+    if ( messageHandler[type] ) {
+        // console.log("messageHandler]", parsed);
+        messageHandler[type](data);
+    }
+};
+
+// set handleRefresh()
+socket.handleRefresh = () => {
+    refreshEntireRate();
+}
+
+// poloniex.getTickers().then(
+//     data => {
+//         // console.log(data);
+//     }
+// );
+
+
 
