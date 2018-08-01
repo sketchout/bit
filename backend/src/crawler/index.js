@@ -47,7 +47,8 @@ async function registerInitialExchangeRate()
 }
 
 async function refreshEntireRate() {
-    const tickers = await poloniex.getTickers();
+    
+    const tickers = await poloniex.getTickers();    // returnTicker
     const keys = Object.keys(tickers);
 
     // console.log('keys:',keys);
